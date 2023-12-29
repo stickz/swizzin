@@ -1,53 +1,47 @@
-From 7bdf3505fd4378f16f69e8c2b3890dbbdf2c9f3e Mon Sep 17 00:00:00 2001
+From 421deef6167ec6901eb6b64b58b2595a7236e1d7 Mon Sep 17 00:00:00 2001
 From: stickz <stickman002@mail.com>
 Date: Fri, 29 Dec 2023 17:05:08 -0500
-Subject: [PATCH] UDNS retry announce
+Subject: [PATCH 1/2] Increase udp tracker timeout
 
 ---
- src/tracker/tracker_udp.cc | 12 ++++++++++++
- src/tracker/tracker_udp.h  |  1 +
- 2 files changed, 13 insertions(+)
+ src/torrent/download_info.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/src/tracker/tracker_udp.cc b/src/tracker/tracker_udp.cc
-index 2ba6ea21..e4bfb1e5 100644
---- a/src/tracker/tracker_udp.cc
-+++ b/src/tracker/tracker_udp.cc
-@@ -78,6 +78,7 @@ TrackerUdp::TrackerUdp(TrackerList* parent, rak::tracker_info& info, int flags)
+diff --git a/src/torrent/download_info.h b/src/torrent/download_info.h
+index 341e4c25b..e6c10e8ea 100644
+--- a/src/torrent/download_info.h
++++ b/src/torrent/download_info.h
+@@ -149,8 +149,8 @@ class LIBTORRENT_EXPORT DownloadInfo {
+   uint32_t            load_date() const                            { return m_loadDate; }
  
-   m_resolver_callback = std::bind(&TrackerUdp::start_announce, this, std::placeholders::_1, std::placeholders::_2);
-   m_resolver_query = NULL;
-+  m_resolves = 3;
+   uint32_t            http_timeout() const                         { return 60; }
+-  uint32_t            udp_timeout() const                          { return 30; }
+-  uint32_t            udp_tries() const                            { return 2; }
++  uint32_t            udp_timeout() const                          { return 60; }
++  uint32_t            udp_tries() const                            { return 3; }
+ 
+   uint32_t            upload_unchoked() const                      { return m_upload_unchoked; }
+   uint32_t            download_unchoked() const                    { return m_download_unchoked; }
+
+From 571ff58ca48716302ad73edd509bb859cd2278f3 Mon Sep 17 00:00:00 2001
+From: stickz <stickman002@mail.com>
+Date: Fri, 29 Dec 2023 18:22:44 -0500
+Subject: [PATCH 2/2] Update tracker_controller.cc
+
+---
+ src/torrent/tracker_controller.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/torrent/tracker_controller.cc b/src/torrent/tracker_controller.cc
+index ddbf65380..955e36286 100644
+--- a/src/torrent/tracker_controller.cc
++++ b/src/torrent/tracker_controller.cc
+@@ -192,7 +192,7 @@ TrackerController::send_start_event() {
+ 
+   if (m_tracker_list->count_usable() > 1) {
+     m_flags |= flag_promiscuous_mode;
+-    update_timeout(3);
++    update_timeout(30);
+   }
  }
  
- TrackerUdp::~TrackerUdp() {
-@@ -110,7 +111,18 @@ TrackerUdp::start_announce(const sockaddr* sa, int err) {
-   m_resolver_query = NULL;
- 
-   if (sa == NULL)
-+  {
-+    if (--m_resolves > 0)
-+    {
-+      m_resolver_query = manager->connection_manager()->async_resolver().enqueue(
-+        m_hostname.c_str(),
-+        AF_UNSPEC,
-+        &m_resolver_callback
-+      );	  
-+      manager->connection_manager()->async_resolver().flush();
-+    }
-     return receive_failed("could not resolve hostname");
-+  }
- 
-   m_connectAddress = *rak::socket_address::cast_from(sa);
-   m_connectAddress.set_port(m_port);
-diff --git a/src/tracker/tracker_udp.h b/src/tracker/tracker_udp.h
-index 480a1e88..ae9f49d0 100644
---- a/src/tracker/tracker_udp.h
-+++ b/src/tracker/tracker_udp.h
-@@ -110,6 +110,7 @@ class TrackerUdp : public SocketDatagram, public Tracker {
-   WriteBuffer*        m_writeBuffer;
- 
-   uint32_t            m_tries;
-+  int                 m_resolves;
- 
-   rak::priority_item  m_taskTimeout;
- };
