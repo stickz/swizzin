@@ -1,0 +1,53 @@
+From 7bdf3505fd4378f16f69e8c2b3890dbbdf2c9f3e Mon Sep 17 00:00:00 2001
+From: stickz <stickman002@mail.com>
+Date: Fri, 29 Dec 2023 17:05:08 -0500
+Subject: [PATCH] UDNS retry announce
+
+---
+ src/tracker/tracker_udp.cc | 12 ++++++++++++
+ src/tracker/tracker_udp.h  |  1 +
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/tracker/tracker_udp.cc b/src/tracker/tracker_udp.cc
+index 2ba6ea21..e4bfb1e5 100644
+--- a/src/tracker/tracker_udp.cc
++++ b/src/tracker/tracker_udp.cc
+@@ -78,6 +78,7 @@ TrackerUdp::TrackerUdp(TrackerList* parent, rak::tracker_info& info, int flags)
+ 
+   m_resolver_callback = std::bind(&TrackerUdp::start_announce, this, std::placeholders::_1, std::placeholders::_2);
+   m_resolver_query = NULL;
++  m_resolves = 3;
+ }
+ 
+ TrackerUdp::~TrackerUdp() {
+@@ -110,7 +111,18 @@ TrackerUdp::start_announce(const sockaddr* sa, int err) {
+   m_resolver_query = NULL;
+ 
+   if (sa == NULL)
++  {
++    if (--m_resolves > 0)
++    {
++      m_resolver_query = manager->connection_manager()->async_resolver().enqueue(
++        m_hostname.c_str(),
++        AF_UNSPEC,
++        &m_resolver_callback
++      );	  
++      manager->connection_manager()->async_resolver().flush();
++    }
+     return receive_failed("could not resolve hostname");
++  }
+ 
+   m_connectAddress = *rak::socket_address::cast_from(sa);
+   m_connectAddress.set_port(m_port);
+diff --git a/src/tracker/tracker_udp.h b/src/tracker/tracker_udp.h
+index 480a1e88..ae9f49d0 100644
+--- a/src/tracker/tracker_udp.h
++++ b/src/tracker/tracker_udp.h
+@@ -110,6 +110,7 @@ class TrackerUdp : public SocketDatagram, public Tracker {
+   WriteBuffer*        m_writeBuffer;
+ 
+   uint32_t            m_tries;
++  int                 m_resolves;
+ 
+   rak::priority_item  m_taskTimeout;
+ };
